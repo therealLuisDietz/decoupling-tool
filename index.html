@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>BIP vs. Material Footprint – Kopplung & Entkopplung</title>
+<title>GDP vs. Material Footprint – Coupling & Decoupling</title>
 <style>
   .decoupling-tool {
     --text: #000000;
@@ -12,9 +12,11 @@
     --border: #dddddd;
     --grid: #eeeeee;
     --axis: #999999;
+    --track: #e4e4e4;
     --series-gdp: #2a78d6;
     --series-mf: #eb6834;
     --series-int: #1baf7a;
+    --series-years: #777777;
     --abs: #13663f;
     --rel: #8a5d00;
     --cpl: #b42b2a;
@@ -45,12 +47,41 @@
   .decoupling-tool .axisline { stroke: var(--axis); }
   .decoupling-tool .controls { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 8px; }
   @media (max-width: 520px) { .decoupling-tool .controls { grid-template-columns: 1fr; gap: 6px; } }
-  .decoupling-tool label { display: flex; justify-content: space-between; font-size: 12px; font-weight: 600; }
+  .decoupling-tool label { display: flex; justify-content: space-between; font-size: 12px; font-weight: 600; color: var(--text); }
   .decoupling-tool label output { font-variant-numeric: tabular-nums; }
-  .decoupling-tool input[type=range] { width: 100%; margin: 4px 0 0; }
-  .decoupling-tool #gdp { accent-color: var(--series-gdp); }
-  .decoupling-tool #mf { accent-color: var(--series-mf); }
-  .decoupling-tool #years { accent-color: #555555; }
+
+  /* Custom sliders: light track, colored fill, white thumb (same look in every browser) */
+  .decoupling-tool input[type=range] {
+    -webkit-appearance: none; appearance: none;
+    width: 100%; height: 18px; margin: 4px 0 0; padding: 0;
+    background: transparent; cursor: pointer;
+  }
+  .decoupling-tool input[type=range]:focus { outline: none; }
+  .decoupling-tool input[type=range]::-webkit-slider-runnable-track {
+    height: 6px; border-radius: 3px; border: none;
+    background: linear-gradient(to right, var(--c) 0 var(--fill), var(--track) var(--fill) 100%);
+  }
+  .decoupling-tool input[type=range]::-moz-range-track {
+    height: 6px; border-radius: 3px; border: none; background: var(--track);
+  }
+  .decoupling-tool input[type=range]::-moz-range-progress {
+    height: 6px; border-radius: 3px; background: var(--c);
+  }
+  .decoupling-tool input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 16px; height: 16px; margin-top: -5px; border-radius: 50%;
+    background: #ffffff; border: 2px solid var(--c); box-shadow: 0 1px 3px rgba(0,0,0,.2);
+  }
+  .decoupling-tool input[type=range]::-moz-range-thumb {
+    width: 12px; height: 12px; border-radius: 50%;
+    background: #ffffff; border: 2px solid var(--c); box-shadow: 0 1px 3px rgba(0,0,0,.2);
+  }
+  .decoupling-tool input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px rgba(0,0,0,.15); }
+  .decoupling-tool input[type=range]:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px rgba(0,0,0,.15); }
+  .decoupling-tool #gdp { --c: var(--series-gdp); }
+  .decoupling-tool #mf { --c: var(--series-mf); }
+  .decoupling-tool #years { --c: var(--series-years); }
+
   .decoupling-tool .tooltip {
     position: fixed; pointer-events: none; display: none; z-index: 10;
     background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px;
@@ -65,22 +96,22 @@
   <p class="verdict" id="verdict"></p>
   <p class="verdict-text" id="verdictText"></p>
   <div class="legend">
-    <span><i style="border-color:var(--series-gdp)"></i>BIP</span>
+    <span><i style="border-color:var(--series-gdp)"></i>GDP</span>
     <span><i style="border-color:var(--series-mf)"></i>Material Footprint (MF)</span>
-    <span><i class="dash" style="border-color:var(--series-int)"></i>Materialintensität (MF/BIP)</span>
+    <span><i class="dash" style="border-color:var(--series-int)"></i>Material intensity (MF/GDP)</span>
   </div>
-  <svg id="chart" viewBox="0 0 600 260" role="img" aria-label="Indexverlauf von BIP, Material Footprint und Materialintensität"></svg>
+  <svg id="chart" viewBox="0 0 600 260" role="img" aria-label="Index of GDP, material footprint and material intensity over time"></svg>
   <div class="controls">
     <div>
-      <label for="gdp">BIP-Wachstum <output id="gdpVal"></output></label>
+      <label for="gdp">GDP growth <output id="gdpVal"></output></label>
       <input type="range" id="gdp" min="-4" max="8" step="0.1" value="3">
     </div>
     <div>
-      <label for="mf">MF-Wachstum <output id="mfVal"></output></label>
+      <label for="mf">MF growth <output id="mfVal"></output></label>
       <input type="range" id="mf" min="-4" max="8" step="0.1" value="2">
     </div>
     <div>
-      <label for="years">Zeitraum <output id="yearsVal"></output></label>
+      <label for="years">Time span <output id="yearsVal"></output></label>
       <input type="range" id="years" min="5" max="80" step="1" value="30">
     </div>
   </div>
@@ -93,8 +124,8 @@
   const gdpEl = $('gdp'), mfEl = $('mf'), yearsEl = $('years'), svg = $('chart'), tooltip = $('tooltip');
   const NS = 'http://www.w3.org/2000/svg';
 
-  const fmtPct = v => (v > 0 ? '+' : v < 0 ? '−' : '±') + Math.abs(v).toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' %';
-  const fmtNum = v => v.toLocaleString('de-DE', { maximumFractionDigits: 0 });
+  const fmtPct = v => (v > 0 ? '+' : v < 0 ? '−' : '±') + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
+  const fmtNum = v => v.toLocaleString('en-US', { maximumFractionDigits: 0 });
 
   function el(tag, attrs, parent) {
     const e = document.createElementNS(NS, tag);
@@ -104,14 +135,14 @@
   }
 
   function classify(g, m) {
-    if (g < 0) return ['none', 'Schrumpfung', 'Das BIP sinkt. Entkopplung setzt BIP-Wachstum voraus.'];
-    if (g === 0) return ['none', 'Stagnation', 'Das BIP wächst nicht. Entkopplung setzt BIP-Wachstum voraus.'];
-    if (m <= 0) return ['abs', 'Absolute Entkopplung', m < 0
-      ? 'Das BIP wächst, der Material Footprint sinkt.'
-      : 'Das BIP wächst, der Material Footprint bleibt konstant (Grenzfall).'];
-    if (m < g) return ['rel', 'Relative Entkopplung', 'Das BIP wächst schneller als der Material Footprint, der MF steigt aber weiter.'];
-    if (m === g) return ['cpl', 'Kopplung', 'BIP und Material Footprint wachsen gleich schnell.'];
-    return ['cpl', 'Kopplung', 'Der Material Footprint wächst schneller als das BIP (Re-Kopplung).'];
+    if (g < 0) return ['none', 'Contraction', 'GDP is shrinking. Decoupling presupposes GDP growth.'];
+    if (g === 0) return ['none', 'Stagnation', 'GDP is not growing. Decoupling presupposes GDP growth.'];
+    if (m <= 0) return ['abs', 'Absolute decoupling', m < 0
+      ? 'GDP grows while the material footprint declines.'
+      : 'GDP grows while the material footprint stays constant (borderline case).'];
+    if (m < g) return ['rel', 'Relative decoupling', 'GDP grows faster than the material footprint, but the MF still keeps rising.'];
+    if (m === g) return ['cpl', 'Coupling', 'GDP and material footprint grow at the same rate.'];
+    return ['cpl', 'Coupling', 'The material footprint grows faster than GDP (re-coupling).'];
   }
 
   function niceTicks(min, max, n) {
@@ -148,19 +179,19 @@
     niceTicks(0, years, 6).filter(t => t <= years).forEach(t => {
       el('text', { x: x(t), y: T + ph + 15, 'text-anchor': 'middle' }, svg).textContent = t;
     });
-    el('text', { x: L + pw + 12, y: T + ph + 15 }, svg).textContent = 'Jahre';
+    el('text', { x: L + pw + 12, y: T + ph + 15 }, svg).textContent = 'Years';
 
     const lines = [
-      { key: 'gdp', color: 'var(--series-gdp)', label: 'BIP' },
+      { key: 'gdp', color: 'var(--series-gdp)', label: 'GDP' },
       { key: 'mf', color: 'var(--series-mf)', label: 'MF' },
-      { key: 'int', color: 'var(--series-int)', label: 'MF/BIP', dash: '6 4' },
+      { key: 'int', color: 'var(--series-int)', label: 'MF/GDP', dash: '6 4' },
     ];
     lines.forEach(s => {
       const d = data.map((p, i) => (i ? 'L' : 'M') + x(p.t).toFixed(1) + ',' + y(p[s.key]).toFixed(1)).join('');
       el('path', { d, fill: 'none', stroke: s.color, 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-dasharray': s.dash || 'none' }, svg);
     });
 
-    // Endbeschriftung ohne Überlappung
+    // End labels without overlap
     const last = data[data.length - 1];
     const labels = lines.map(s => ({ ...s, v: last[s.key], yy: y(last[s.key]) })).sort((a, b) => a.yy - b.yy);
     for (let i = 1; i < labels.length; i++) labels[i].yy = Math.max(labels[i].yy, labels[i - 1].yy + 14);
@@ -180,8 +211,8 @@
       const p = data[t];
       cross.setAttribute('x1', x(t)); cross.setAttribute('x2', x(t)); cross.setAttribute('visibility', 'visible');
       lines.forEach((s, i) => { dots[i].setAttribute('cx', x(t)); dots[i].setAttribute('cy', y(p[s.key])); dots[i].setAttribute('visibility', 'visible'); });
-      tooltip.innerHTML = `<div><b>Jahr ${t}</b></div><div><span>BIP</span><b>${fmtNum(p.gdp)}</b></div>` +
-        `<div><span>MF</span><b>${fmtNum(p.mf)}</b></div><div><span>MF/BIP</span><b>${fmtNum(p.int)}</b></div>`;
+      tooltip.innerHTML = `<div><b>Year ${t}</b></div><div><span>GDP</span><b>${fmtNum(p.gdp)}</b></div>` +
+        `<div><span>MF</span><b>${fmtNum(p.mf)}</b></div><div><span>MF/GDP</span><b>${fmtNum(p.int)}</b></div>`;
       tooltip.style.display = 'block';
       let lx = ev.clientX + 12, ly = ev.clientY + 12;
       if (lx + tooltip.offsetWidth > innerWidth - 6) lx = ev.clientX - tooltip.offsetWidth - 12;
@@ -194,11 +225,18 @@
     });
   }
 
+  // Colored fill of the slider track (WebKit/Blink; Firefox uses ::-moz-range-progress)
+  function setFill(input) {
+    const pct = (input.value - input.min) / (input.max - input.min) * 100;
+    input.style.setProperty('--fill', pct + '%');
+  }
+
   function update() {
     const g = +gdpEl.value, m = +mfEl.value, years = +yearsEl.value;
+    [gdpEl, mfEl, yearsEl].forEach(setFill);
     $('gdpVal').textContent = fmtPct(g);
     $('mfVal').textContent = fmtPct(m);
-    $('yearsVal').textContent = years + ' J.';
+    $('yearsVal').textContent = years + ' yrs';
     const [cls, title, text] = classify(g, m);
     $('verdict').innerHTML = `<span style="color:var(--${cls})">■</span> ${title}`;
     $('verdictText').textContent = text;
