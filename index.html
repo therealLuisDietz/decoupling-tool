@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BIP vs. Material Footprint – Kopplung & Entkopplung</title>
+<style>
+  .decoupling-tool {
+    --text: #000000;
+    --text-muted: #555555;
+    --bg: #ffffff;
+    --border: #dddddd;
+    --grid: #eeeeee;
+    --axis: #999999;
+    --series-gdp: #2a78d6;
+    --series-mf: #eb6834;
+    --series-int: #1baf7a;
+    --abs: #13663f;
+    --rel: #8a5d00;
+    --cpl: #b42b2a;
+    --none: #555555;
+    color-scheme: light;
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 14px 16px;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px;
+    line-height: 1.4;
+    box-sizing: border-box;
+  }
+  .decoupling-tool * { box-sizing: border-box; }
+  .decoupling-tool .verdict { margin: 0 0 2px; font-size: 16px; font-weight: 700; }
+  .decoupling-tool .verdict-text { margin: 0 0 8px; color: var(--text); }
+  .decoupling-tool .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--text); margin-bottom: 2px; }
+  .decoupling-tool .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .decoupling-tool .legend i { display: inline-block; width: 16px; border-top: 2px solid; }
+  .decoupling-tool .legend i.dash { border-top-style: dashed; }
+  .decoupling-tool svg { display: block; width: 100%; height: auto; }
+  .decoupling-tool svg text { fill: var(--text-muted); font-size: 11px; font-family: inherit; }
+  .decoupling-tool .gridline { stroke: var(--grid); }
+  .decoupling-tool .axisline { stroke: var(--axis); }
+  .decoupling-tool .controls { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 8px; }
+  @media (max-width: 520px) { .decoupling-tool .controls { grid-template-columns: 1fr; gap: 6px; } }
+  .decoupling-tool label { display: flex; justify-content: space-between; font-size: 12px; font-weight: 600; }
+  .decoupling-tool label output { font-variant-numeric: tabular-nums; }
+  .decoupling-tool input[type=range] { width: 100%; margin: 4px 0 0; }
+  .decoupling-tool #gdp { accent-color: var(--series-gdp); }
+  .decoupling-tool #mf { accent-color: var(--series-mf); }
+  .decoupling-tool #years { accent-color: #555555; }
+  .decoupling-tool .tooltip {
+    position: fixed; pointer-events: none; display: none; z-index: 10;
+    background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 8px; font-size: 12px; box-shadow: 0 3px 10px rgba(0,0,0,.12);
+  }
+  .decoupling-tool .tooltip div { display: flex; justify-content: space-between; gap: 12px; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body style="margin:0;background:#ffffff">
+
+<div class="decoupling-tool">
+  <p class="verdict" id="verdict"></p>
+  <p class="verdict-text" id="verdictText"></p>
+  <div class="legend">
+    <span><i style="border-color:var(--series-gdp)"></i>BIP</span>
+    <span><i style="border-color:var(--series-mf)"></i>Material Footprint (MF)</span>
+    <span><i class="dash" style="border-color:var(--series-int)"></i>Materialintensität (MF/BIP)</span>
+  </div>
+  <svg id="chart" viewBox="0 0 600 260" role="img" aria-label="Indexverlauf von BIP, Material Footprint und Materialintensität"></svg>
+  <div class="controls">
+    <div>
+      <label for="gdp">BIP-Wachstum <output id="gdpVal"></output></label>
+      <input type="range" id="gdp" min="-4" max="8" step="0.1" value="3">
+    </div>
+    <div>
+      <label for="mf">MF-Wachstum <output id="mfVal"></output></label>
+      <input type="range" id="mf" min="-4" max="8" step="0.1" value="2">
+    </div>
+    <div>
+      <label for="years">Zeitraum <output id="yearsVal"></output></label>
+      <input type="range" id="years" min="5" max="80" step="1" value="30">
+    </div>
+  </div>
+  <div class="tooltip" id="tooltip"></div>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const gdpEl = $('gdp'), mfEl = $('mf'), yearsEl = $('years'), svg = $('chart'), tooltip = $('tooltip');
+  const NS = 'http://www.w3.org/2000/svg';
+
+  const fmtPct = v => (v > 0 ? '+' : v < 0 ? '−' : '±') + Math.abs(v).toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' %';
+  const fmtNum = v => v.toLocaleString('de-DE', { maximumFractionDigits: 0 });
+
+  function el(tag, attrs, parent) {
+    const e = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    parent.appendChild(e);
+    return e;
+  }
+
+  function classify(g, m) {
+    if (g < 0) return ['none', 'Schrumpfung', 'Das BIP sinkt. Entkopplung setzt BIP-Wachstum voraus.'];
+    if (g === 0) return ['none', 'Stagnation', 'Das BIP wächst nicht. Entkopplung setzt BIP-Wachstum voraus.'];
+    if (m <= 0) return ['abs', 'Absolute Entkopplung', m < 0
+      ? 'Das BIP wächst, der Material Footprint sinkt.'
+      : 'Das BIP wächst, der Material Footprint bleibt konstant (Grenzfall).'];
+    if (m < g) return ['rel', 'Relative Entkopplung', 'Das BIP wächst schneller als der Material Footprint, der MF steigt aber weiter.'];
+    if (m === g) return ['cpl', 'Kopplung', 'BIP und Material Footprint wachsen gleich schnell.'];
+    return ['cpl', 'Kopplung', 'Der Material Footprint wächst schneller als das BIP (Re-Kopplung).'];
+  }
+
+  function niceTicks(min, max, n) {
+    const raw = (max - min) / n;
+    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const r = raw / mag;
+    const step = mag * (r >= 7.5 ? 10 : r >= 3.5 ? 5 : r >= 1.5 ? 2 : 1);
+    const ticks = [];
+    for (let v = Math.floor(min / step) * step; v < max + step - 1e-9; v += step) ticks.push(+v.toFixed(10));
+    return ticks;
+  }
+
+  const W = 600, H = 260, L = 40, R = 86, T = 8, B = 28;
+  const pw = W - L - R, ph = H - T - B;
+
+  function draw(g, m, years) {
+    const data = [];
+    for (let t = 0; t <= years; t++) {
+      const gdp = 100 * Math.pow(1 + g / 100, t), mf = 100 * Math.pow(1 + m / 100, t);
+      data.push({ t, gdp, mf, int: 100 * mf / gdp });
+    }
+    svg.innerHTML = '';
+    const vals = data.flatMap(d => [d.gdp, d.mf, d.int]);
+    const yt = niceTicks(0, Math.max(120, ...vals), 5);
+    const yMax = yt[yt.length - 1];
+    const x = t => L + t / years * pw;
+    const y = v => T + ph - v / yMax * ph;
+
+    yt.forEach(v => {
+      el('line', { x1: L, x2: L + pw, y1: y(v), y2: y(v), class: v === 0 ? 'axisline' : 'gridline' }, svg);
+      el('text', { x: L - 6, y: y(v) + 4, 'text-anchor': 'end' }, svg).textContent = fmtNum(v);
+    });
+    el('line', { x1: L, x2: L + pw, y1: y(100), y2: y(100), class: 'axisline', 'stroke-dasharray': '2 3' }, svg);
+    niceTicks(0, years, 6).filter(t => t <= years).forEach(t => {
+      el('text', { x: x(t), y: T + ph + 15, 'text-anchor': 'middle' }, svg).textContent = t;
+    });
+    el('text', { x: L + pw + 12, y: T + ph + 15 }, svg).textContent = 'Jahre';
+
+    const lines = [
+      { key: 'gdp', color: 'var(--series-gdp)', label: 'BIP' },
+      { key: 'mf', color: 'var(--series-mf)', label: 'MF' },
+      { key: 'int', color: 'var(--series-int)', label: 'MF/BIP', dash: '6 4' },
+    ];
+    lines.forEach(s => {
+      const d = data.map((p, i) => (i ? 'L' : 'M') + x(p.t).toFixed(1) + ',' + y(p[s.key]).toFixed(1)).join('');
+      el('path', { d, fill: 'none', stroke: s.color, 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-dasharray': s.dash || 'none' }, svg);
+    });
+
+    // Endbeschriftung ohne Überlappung
+    const last = data[data.length - 1];
+    const labels = lines.map(s => ({ ...s, v: last[s.key], yy: y(last[s.key]) })).sort((a, b) => a.yy - b.yy);
+    for (let i = 1; i < labels.length; i++) labels[i].yy = Math.max(labels[i].yy, labels[i - 1].yy + 14);
+    labels.forEach(s => {
+      el('circle', { cx: x(years), cy: y(s.v), r: 3.5, fill: s.color, stroke: '#fff', 'stroke-width': 1.5 }, svg);
+      const t = el('text', { x: x(years) + 8, y: s.yy + 4 }, svg);
+      t.innerHTML = `<tspan style="fill:#000;font-weight:600">${s.label}</tspan> ${fmtNum(s.v)}`;
+    });
+
+    // Hover
+    const cross = el('line', { y1: T, y2: T + ph, class: 'axisline', visibility: 'hidden' }, svg);
+    const dots = lines.map(s => el('circle', { r: 3.5, fill: s.color, stroke: '#fff', 'stroke-width': 1.5, visibility: 'hidden' }, svg));
+    const hit = el('rect', { x: L, y: T, width: pw, height: ph, fill: 'transparent' }, svg);
+    hit.addEventListener('pointermove', ev => {
+      const r = svg.getBoundingClientRect();
+      const t = Math.max(0, Math.min(years, Math.round(((ev.clientX - r.left) * W / r.width - L) / pw * years)));
+      const p = data[t];
+      cross.setAttribute('x1', x(t)); cross.setAttribute('x2', x(t)); cross.setAttribute('visibility', 'visible');
+      lines.forEach((s, i) => { dots[i].setAttribute('cx', x(t)); dots[i].setAttribute('cy', y(p[s.key])); dots[i].setAttribute('visibility', 'visible'); });
+      tooltip.innerHTML = `<div><b>Jahr ${t}</b></div><div><span>BIP</span><b>${fmtNum(p.gdp)}</b></div>` +
+        `<div><span>MF</span><b>${fmtNum(p.mf)}</b></div><div><span>MF/BIP</span><b>${fmtNum(p.int)}</b></div>`;
+      tooltip.style.display = 'block';
+      let lx = ev.clientX + 12, ly = ev.clientY + 12;
+      if (lx + tooltip.offsetWidth > innerWidth - 6) lx = ev.clientX - tooltip.offsetWidth - 12;
+      if (ly + tooltip.offsetHeight > innerHeight - 6) ly = ev.clientY - tooltip.offsetHeight - 12;
+      tooltip.style.left = lx + 'px'; tooltip.style.top = ly + 'px';
+    });
+    hit.addEventListener('pointerleave', () => {
+      cross.setAttribute('visibility', 'hidden'); dots.forEach(d => d.setAttribute('visibility', 'hidden'));
+      tooltip.style.display = 'none';
+    });
+  }
+
+  function update() {
+    const g = +gdpEl.value, m = +mfEl.value, years = +yearsEl.value;
+    $('gdpVal').textContent = fmtPct(g);
+    $('mfVal').textContent = fmtPct(m);
+    $('yearsVal').textContent = years + ' J.';
+    const [cls, title, text] = classify(g, m);
+    $('verdict').innerHTML = `<span style="color:var(--${cls})">■</span> ${title}`;
+    $('verdictText').textContent = text;
+    draw(g, m, years);
+  }
+
+  [gdpEl, mfEl, yearsEl].forEach(e => e.addEventListener('input', update));
+  update();
+})();
+</script>
+</body>
+</html>
